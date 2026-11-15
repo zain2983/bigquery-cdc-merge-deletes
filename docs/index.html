@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BigQuery CDC merges: deletes without a partition value</title>
+<meta name="description" content="Measured follow-up to Artie's BigQuery MERGE partition-pruning benchmark: what a key-only delete costs, and which strategy to use.">
+<style>
+  :root {
+    --bg: #fbfaf7; --card: #ffffff; --ink: #16150f; --ink2: #55534b; --line: #e4e1d8;
+    --accent: #1f5fbf; --good: #0b6b3a; --bad: #a3341f; --chip: #f0ede4;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #161613; --card: #1f1f1b; --ink: #f1efe8; --ink2: #b9b6aa; --line: #34332d;
+            --accent: #7fb0f5; --good: #6fcf97; --bad: #f0907a; --chip: #2a2a25; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+         font: 17px/1.6 -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; }
+  main { max-width: 760px; margin: 0 auto; padding: 48px 16px 80px; }
+  h1 { font-size: 2rem; line-height: 1.2; margin: 0 0 12px; letter-spacing: -0.01em; }
+  h2 { font-size: 1.25rem; margin: 48px 0 12px; }
+  p, li { color: var(--ink); }
+  .lede { font-size: 1.1rem; color: var(--ink2); margin: 0 0 8px; }
+  .meta { font-size: 0.9rem; color: var(--ink2); margin: 0 0 32px; }
+  a { color: var(--accent); }
+  .big { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 24px 0; }
+  .stat { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 16px; }
+  .stat b { display: block; font-size: 1.9rem; line-height: 1.1; font-variant-numeric: tabular-nums; }
+  .stat span { font-size: 0.92rem; color: var(--ink2); }
+  .scroll { overflow-x: auto; margin: 12px 0 8px; }
+  table { border-collapse: collapse; width: 100%; font-size: 0.95rem; background: var(--card);
+          border: 1px solid var(--line); border-radius: 10px; }
+  th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { font-size: 0.82rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--ink2); font-weight: 600; }
+  tr:last-child td { border-bottom: 0; }
+  td.n { font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .tag { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 0.8rem; background: var(--chip); }
+  .tag.good { color: var(--good); } .tag.bad { color: var(--bad); }
+  figure { margin: 20px 0; }
+  figure img { width: 100%; height: auto; border: 1px solid var(--line); border-radius: 10px; background: #fcfcfb; }
+  figcaption { font-size: 0.88rem; color: var(--ink2); margin-top: 6px; }
+  ul { padding-left: 20px; margin: 8px 0; }
+  li { margin: 4px 0; }
+  .note { border-left: 3px solid var(--line); padding: 2px 0 2px 14px; color: var(--ink2); font-size: 0.95rem; }
+  code { font: 0.9em ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--chip); padding: 1px 5px; border-radius: 4px; }
+  footer { margin-top: 56px; padding-top: 16px; border-top: 1px solid var(--line); font-size: 0.9rem; color: var(--ink2); }
+  @media (max-width: 520px) { .big { grid-template-columns: 1fr; } h1 { font-size: 1.6rem; } }
+</style>
+</head>
+<body>
+<main>
+  <h1>One delete without a date makes a BigQuery merge read the whole table</h1>
+  <p class="lede">A measured follow-up to Artie's open benchmark on partition-aware CDC merges: what a key-only delete costs, and which strategy to use.</p>
+  <p class="meta">Zain Al Abidin · measured on BigQuery, 15 November 2026 ·
+    <a href="https://github.com/zain2983/bigquery-cdc-merge-deletes">code, queries and results</a> · no affiliation with Artie</p>
+
+  <div class="big">
+    <div class="stat"><b>94 MB</b><span>read per merge when the batch's dates are in the MERGE. $0.15 a day.</span></div>
+    <div class="stat"><b>5.67 GB</b><span>read per merge when one delete in the batch has no date. $9.28 a day.</span></div>
+  </div>
+
+  <h2>The problem</h2>
+  <ul>
+    <li>A CDC pipeline copies changes into BigQuery every five minutes with a MERGE.</li>
+    <li>BigQuery on-demand bills the data a statement reads.</li>
+    <li><a href="https://www.artie.com/blogs/bigquery-partition-aware-cdc-merges">Artie's benchmark</a> shows a filter that makes the merge read only the days the batch touches.</li>
+    <li>The filter is built from the dates inside the batch.</li>
+    <li>A Postgres delete, on default settings, sends only the row's key. No date.</li>
+    <li>A batch with one such delete cannot use the filter. It reads the whole table.</li>
+  </ul>
+  <p class="note">Artie's post names this: "Deletes are the one to check." Their benchmark source ran <code>REPLICA IDENTITY FULL</code>, so every delete came with its date. This page measures the default case.</p>
+
+  <h2>What I measured</h2>
+  <p>Artie's harness, unchanged, on the same table: 3 years, 1,095 daily partitions, 109.5M rows, 51.5 GB. First I reproduced their result. Then each batch got 50 deletes with no date, and I ran four ways of handling it, 12 batches each.</p>
+  <div class="scroll">
+  <table>
+    <tr><th>Way to handle the batch</th><th>GB billed per batch</th><th>USD per day</th><th>Verdict</th></tr>
+    <tr><td>Fall back to the merge without the filter</td><td class="n">5.670</td><td class="n">9.28</td><td><span class="tag">fine when rare</span></td></tr>
+    <tr><td>Filtered merge, plus a separate DELETE by key</td><td class="n">5.675</td><td class="n">9.29</td><td><span class="tag bad">no saving</span></td></tr>
+    <tr><td>Look the date up in a key-to-date table in BigQuery</td><td class="n">0.299</td><td class="n">0.49</td><td><span class="tag bad">does not scale</span></td></tr>
+    <tr><td>Queue the deletes, apply them every 6th batch</td><td class="n">1.007</td><td class="n">1.65</td><td><span class="tag good">recommended</span></td></tr>
+    <tr><td>Every delete carries its date (Artie's result, reproduced)</td><td class="n">0.094</td><td class="n">0.15</td><td><span class="tag good">best, needs a source change</span></td></tr>
+  </table>
+  </div>
+  <p>All four strategies ended with the same table: 109,503,000 rows, same key fingerprint, same partition layout.</p>
+
+  <figure>
+    <img src="cost_by_fix.svg" alt="Line chart of daily cost against the share of batches with a key-only delete. No filter and split rise to about $9.28 a day. Deferred deletes level off at $1.65. The lookup table reaches $0.49. Deletes that carry their date stay at $0.15.">
+    <figcaption>The two ends are measured. The lines between are a model: each batch either has a key-only delete or not.</figcaption>
+  </figure>
+
+  <h2>What I recommend</h2>
+  <p>No single fix. Pick the strategy per table, from how its deletes behave.</p>
+  <div class="scroll">
+  <table>
+    <tr><th>The table's deletes</th><th>Strategy</th><th>Cost on this table</th></tr>
+    <tr><td>Carry the date, or there are none</td><td>Filter only. Nothing extra.</td><td class="n">$0.15 a day</td></tr>
+    <tr><td>Key-only, and rare</td><td>Let that one batch fall back.</td><td class="n">3 cents a batch</td></tr>
+    <tr><td>Key-only, and regular</td><td>Queue them. Flush on a schedule.</td><td class="n">3 cents a flush</td></tr>
+    <tr><td>The source database can change</td><td><code>REPLICA IDENTITY USING INDEX</code> on (key, date).</td><td class="n">$0.15 a day</td></tr>
+  </table>
+  </div>
+
+  <h2>Why the queue, and not the lookup table</h2>
+  <p>The lookup table was the cheapest in this test. I still would not build on it.</p>
+  <ul>
+    <li><b>Its cost grows with every delete.</b> 50 deletes read about 50 of 3,000 hash buckets. Thousands would read most of the table, twice.</li>
+    <li><b>Old deletes cost far more.</b> With the 50 deletes spread over 50 old days it billed 2.60 GB a batch, not 0.30.</li>
+    <li><b>It can lose a delete.</b> If a row's date changes later, the lookup points at the wrong day. Not tested here.</li>
+    <li><b>It used more slot time than no filter.</b> 167 s against 111 s, median.</li>
+  </ul>
+  <p>The queue behaves differently.</p>
+  <ul>
+    <li><b>A flush costs the same whatever is waiting.</b> 5.63 GB with 50 deletes queued. 5.63 GB with 300.</li>
+    <li><b>So the flush interval sets the bill.</b> One flush is 3 cents. Every 6th batch gave $1.65 a day.</li>
+    <li><b>Between flushes the merge is cheap.</b> 0.048 GB, plus 0.021 GB to queue the deletes.</li>
+  </ul>
+
+  <h2>Three more findings</h2>
+  <ul>
+    <li><b>Rows that change date.</b> A filter built from the new date alone left 100 duplicates out of 100 moved rows. With the old date included, none.</li>
+    <li><b>Wide batches.</b> On the same batch, the filter billed less than no filter at 30, 120 and 365 partitions: 1.41 against 6.84 GB, 5.64 against 10.61, 17.09 against 20.82.</li>
+    <li><b>Dry runs.</b> For any unfiltered merge or delete, the free estimate was the whole table, 51.5 GB. The bill was 5.6 to 20.8 GB. For filtered merges the estimate matched the bill.</li>
+  </ul>
+
+  <h2>What the queue still needs</h2>
+  <ul>
+    <li>Readers see deleted rows until the flush. A view that hides queued keys would fix that. Not measured yet.</li>
+    <li>The data is still stored until the flush. That matters for erasure requests.</li>
+    <li>Delete, then insert the same key again, inside one flush window. It needs an ordering column. Not tested yet.</li>
+    <li>Only one flush interval is measured. Hourly and daily flushes are next.</li>
+  </ul>
+
+  <h2>The number I cannot see</h2>
+  <p>Which row of the recommendation applies depends on one thing: <b>what share of real batches carry a key-only delete?</b> Only someone running production pipelines can answer that.</p>
+
+  <h2>Limits</h2>
+  <ul>
+    <li>Synthetic data. One table, one region, one run, on-demand pricing.</li>
+    <li>Every batch had exactly 50 key-only deletes.</li>
+    <li>Bytes billed were the same on every repeat. Slot time was not.</li>
+  </ul>
+
+  <footer>
+    Every number on this page comes from a results file in the
+    <a href="https://github.com/zain2983/bigquery-cdc-merge-deletes">repository</a>.
+    Artie's harness (<code>run.sh</code>) is included unchanged under its MIT license.
+  </footer>
+</main>
+</body>
+</html>

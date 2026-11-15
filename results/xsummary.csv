@@ -1,0 +1,63 @@
+scenario,arm,part,merges,median_gb_billed,mean_gb_billed,median_slot_s,slot_s_spread,median_gb_dryrun,dryrun_over_billed,usd_per_day_5min
+del_recent,a,ALL,3,5.669,5.669,214.4,204.0-248.7,,,9.28
+del_recent,a,merge,3,5.669,5.669,,,51.465,9.08,
+del_recent,l,ALL,3,0.3,0.3,228.3,177.8-234.2,,,0.49
+del_recent,l,keymap_del,3,0.092,0.092,,,0.091,0.99,
+del_recent,l,keymap_ins,3,0.021,0.021,,,0.0,0.0,
+del_recent,l,merge,3,0.094,0.094,,,0.094,1.0,
+del_recent,l,resolve,3,0.092,0.092,,,0.092,0.99,
+del_recent,s,ALL,3,5.675,5.675,202.1,190.4-206.5,,,9.29
+del_recent,s,delete,3,5.627,5.627,,,51.465,9.15,
+del_recent,s,merge,3,0.048,0.048,,,0.047,0.98,
+del_spread,a,ALL,3,7.722,7.722,306.5,224.7-334.6,,,12.64
+del_spread,a,merge,3,7.722,7.722,,,51.465,6.66,
+del_spread,l,ALL,3,2.604,2.604,239.7,227.6-277.7,,,4.26
+del_spread,l,keymap_del,3,0.092,0.092,,,0.091,0.99,
+del_spread,l,keymap_ins,3,0.021,0.021,,,0.0,0.0,
+del_spread,l,merge,3,2.398,2.398,,,2.397,1.0,
+del_spread,l,resolve,3,0.092,0.092,,,0.092,0.99,
+del_spread,s,ALL,3,7.728,7.728,276.6,252.6-302.9,,,12.65
+del_spread,s,delete,3,7.68,7.68,,,51.465,6.7,
+del_spread,s,merge,3,0.048,0.048,,,0.047,0.98,
+moves,a,ALL,1,5.627,5.627,752.1,752.1-752.1,,,9.21
+moves,a,merge,1,5.627,5.627,,,51.465,9.15,
+moves,b,ALL,1,0.021,0.021,3.0,3.0-3.0,,,0.03
+moves,b,merge,1,0.021,0.021,,,0.047,2.24,
+moves,i,ALL,1,0.052,0.052,3.4,3.4-3.4,,,0.09
+moves,i,merge,1,0.052,0.052,,,0.094,1.79,
+seq_recent,a,ALL,12,5.67,5.67,111.4,85.1-571.4,,,9.28
+seq_recent,a,merge,12,5.67,5.67,,,51.466,9.08,
+seq_recent,d,ALL,12,0.069,1.007,3.0,2.2-267.1,,,1.65
+seq_recent,d,delete,2,5.627,5.627,,,51.466,9.15,
+seq_recent,d,merge,12,0.048,0.049,,,0.048,1.0,
+seq_recent,d,queue,12,0.021,0.021,,,0.0,0.0,
+seq_recent,l,ALL,12,0.301,0.299,166.5,143.2-248.4,,,0.49
+seq_recent,l,keymap_del,12,0.092,0.091,,,0.091,0.99,
+seq_recent,l,keymap_ins,12,0.021,0.021,,,0.0,0.0,
+seq_recent,l,merge,12,0.095,0.095,,,0.095,0.99,
+seq_recent,l,resolve,12,0.092,0.092,,,0.091,0.99,
+seq_recent,s,ALL,12,5.675,5.675,99.4,79.0-176.0,,,9.29
+seq_recent,s,delete,12,5.627,5.627,,,51.466,9.15,
+seq_recent,s,merge,12,0.048,0.049,,,0.048,1.0,
+spread_n120,a,ALL,3,10.614,10.614,348.9,344.0-361.5,,,17.38
+spread_n120,a,merge,3,10.614,10.614,,,51.465,4.85,
+spread_n120,b,ALL,3,5.64,5.64,173.0,167.2-186.5,,,9.23
+spread_n120,b,merge,3,5.64,5.64,,,5.64,1.0,
+spread_n30,a,ALL,3,6.842,6.842,330.7,272.0-344.7,,,11.2
+spread_n30,a,merge,3,6.842,6.842,,,51.465,7.52,
+spread_n30,b,ALL,3,1.41,1.41,44.5,39.4-50.3,,,2.31
+spread_n30,b,merge,3,1.41,1.41,,,1.41,1.0,
+spread_n365,a,ALL,3,20.816,20.816,753.0,560.5-779.3,,,34.08
+spread_n365,a,merge,3,20.816,20.816,,,51.465,2.47,
+spread_n365,b,ALL,3,17.093,17.093,507.3,503.8-595.8,,,27.98
+spread_n365,b,merge,3,17.093,17.093,,,17.155,1.0,
+advisor,filter,n1,,,,,,a=51.465 b=0.047,,
+advisor,filter,n2,,,,,,a=51.465 b=0.094,,
+advisor,filter,n7,,,,,,a=51.465 b=0.329,,
+advisor,filter,n30,,,,,,a=51.465 b=1.41,,
+advisor,filter,n60,,,,,,a=51.465 b=2.82,,
+advisor,filter,n90,,,,,,a=51.465 b=4.23,,
+advisor,filter,n120,,,,,,a=51.465 b=5.64,,
+advisor,filter,n150,,,,,,a=51.465 b=7.05,,
+advisor,filter,n180,,,,,,a=51.465 b=8.46,,
+advisor,filter,n365,,,,,,a=51.465 b=17.155,,

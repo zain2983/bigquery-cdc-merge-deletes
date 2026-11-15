@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+.DS_Store
+
+# Run bookkeeping (each machine makes its own)
+results/anchor
+results/run_id
+results/queries.sql
+results/*.log
+results/.xrun.lock/

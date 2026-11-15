@@ -1,0 +1,10 @@
+identity,payload_bytes,phase,rows,wal_bytes,wal_bytes_per_row
+default,4000,insert,50000,236435752,4728
+default,4000,update,10000,95221016,9522
+default,4000,delete,5000,22855800,4571
+index,4000,insert,50000,244125224,4882
+index,4000,update,10000,99490648,9949
+index,4000,delete,5000,22936016,4587
+full,4000,insert,50000,236435776,4728
+full,4000,update,10000,136381640,13638
+full,4000,delete,5000,43275624,8655

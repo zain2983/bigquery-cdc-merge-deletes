@@ -1,0 +1,4 @@
+scenario,tbl,arm,variant,runs,median_gb_processed,median_gb_billed,median_slot_s,median_duration_s,total_gb_billed,usd_per_day_5min
+h2h,daily_1095,a,recent,5,5.669,5.669,191.0,3.2,28.3,9.28
+h2h,daily_1095,b,recent,5,0.094,0.094,3.1,2.0,0.5,0.15
+h2h,daily_1095_clustered,c,recent,5,3.817,3.818,348.8,3.1,19.1,6.25
