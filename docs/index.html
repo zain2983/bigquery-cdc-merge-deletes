@@ -27,11 +27,20 @@
   .cap { font-size: 0.85rem; color: var(--ink2); }
   .big { font-size: 3rem; font-weight: 700; line-height: 1.1; margin: 20px 0 0; font-variant-numeric: tabular-nums; }
   .big span { font-size: 1.1rem; font-weight: 400; color: var(--ink2); }
-  .opt { display: flex; justify-content: space-between; gap: 16px; align-items: baseline; padding: 16px 0; border-top: 1px solid var(--line); }
-  .opt:last-of-type { border-bottom: 1px solid var(--line); }
-  .opt b { display: block; }
-  .opt span { color: var(--ink2); font-size: 0.95rem; }
-  .opt .usd { font-size: 1.4rem; font-weight: 700; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  details { border-top: 1px solid var(--line); }
+  details.last { border-bottom: 1px solid var(--line); }
+  summary { display: flex; justify-content: space-between; gap: 16px; align-items: center; padding: 16px 0; cursor: pointer; list-style: none; }
+  summary::-webkit-details-marker { display: none; }
+  summary b { display: block; }
+  summary span { color: var(--ink2); font-size: 0.95rem; }
+  summary .usd { font-size: 1.4rem; font-weight: 700; white-space: nowrap; font-variant-numeric: tabular-nums; color: var(--ink); }
+  summary .usd::after, summary.plain::after { content: "+"; display: inline-block; width: 1.1em; text-align: right; font-weight: 400; color: var(--ink2); }
+  details[open] > summary .usd::after, details[open] > summary.plain::after { content: "\2212"; }
+  summary.plain { font-weight: 600; padding: 13px 0; }
+  details ul { margin: 0 0 18px; padding-left: 20px; font-size: 0.95rem; }
+  details li { margin: 6px 0; }
+  .hint { font-size: 0.85rem; color: var(--ink2); margin: -8px 0 12px; }
+  code { font: 0.9em ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--chip); padding: 1px 5px; border-radius: 4px; }
   footer { margin-top: 56px; font-size: 0.9rem; color: var(--ink2); }
   @media (max-width: 520px) { h1 { font-size: 1.7rem; } .big { font-size: 2.3rem; } .days { gap: 1px; } }
 </style>
@@ -50,13 +59,69 @@
   <p class="big" aria-live="polite"><b id="r-usd"></b> <span id="r-note"></span></p>
 
   <h2>What to do about it</h2>
-  <div class="opt"><div><b>It rarely happens</b><span>Let it happen. Each time costs 3 cents.</span></div><div class="usd">3¢</div></div>
-  <div class="opt"><div><b>It happens a lot</b><span>Hold the deletes back and apply them every 30 minutes.</span></div><div class="usd">$1.65 a day</div></div>
-  <div class="opt"><div><b>You can change the database</b><span>One Postgres setting makes every delete carry its date.</span></div><div class="usd">$0.15 a day</div></div>
+  <p class="hint">Click any row for the detail.</p>
+  <details>
+    <summary><div><b>It rarely happens</b><span>Let it happen. Each time costs 3 cents.</span></div><div class="usd">3¢</div></summary>
+    <ul>
+      <li>A batch that loses the filter billed 5.67 GB. At $6.25 per TiB that is 3 cents.</li>
+      <li>Ten such batches a day comes to about $0.47 a day in total.</li>
+      <li>Up to about 47 a day, this is cheaper than the 30-minute queue below.</li>
+      <li>Nothing to build. The merge is still correct, just unfiltered that once.</li>
+    </ul>
+  </details>
+  <details>
+    <summary><div><b>It happens a lot</b><span>Hold the deletes back and apply them every 30 minutes.</span></div><div class="usd">$1.65 a day</div></summary>
+    <ul>
+      <li>Every batch runs the cheap filtered merge. The dateless deletes wait in a small queue table.</li>
+      <li>Every 30 minutes one statement applies them all. That flush billed 5.63 GB, about 3 cents.</li>
+      <li>It billed the same with 50 deletes waiting and with 300. So how often you flush sets the bill.</li>
+      <li>Measured over 12 batches. The final table matched the unfiltered merge: 109,503,000 rows, same fingerprints.</li>
+      <li>Open: readers see a deleted row until the flush. A view that hides queued rows would fix that. Not measured yet.</li>
+      <li>Next: hourly and daily flushes.</li>
+    </ul>
+  </details>
+  <details class="last">
+    <summary><div><b>You can change the database</b><span>One Postgres setting makes every delete carry its date.</span></div><div class="usd">$0.15 a day</div></summary>
+    <ul>
+      <li>The setting is <code>REPLICA IDENTITY USING INDEX</code>, on a unique index of (key, date).</li>
+      <li>Checked on Postgres 17: a delete then carries the key and the date.</li>
+      <li>Every batch keeps the filter, so the cost is Artie's original result.</li>
+      <li>The price: one extra index on the source table. If someone drops it, updates and deletes there fail.</li>
+      <li>A source table already partitioned by date needs nothing. Its key already includes the date.</li>
+    </ul>
+  </details>
+
+  <h2>More, if you want it</h2>
+  <details>
+    <summary class="plain">How I measured it</summary>
+    <ul>
+      <li>Artie's harness, unchanged. Same table: 1,095 daily partitions, 109.5M rows, 51.5 GB.</li>
+      <li>First I reproduced their result: 5.67 GB without the filter, 94 MB with it.</li>
+      <li>Then every batch got 50 deletes with no date. 12 batches per approach.</li>
+      <li>One merge every five minutes, on-demand pricing at $6.25 per TiB.</li>
+      <li>Limits: synthetic data, one table, one run.</li>
+    </ul>
+  </details>
+  <details>
+    <summary class="plain">Two things I tried that I would not use</summary>
+    <ul>
+      <li><b>Deleting in a separate step: $9.29 a day.</b> No saving. The separate delete reads the whole table too.</li>
+      <li><b>A lookup table in BigQuery: $0.49 a day.</b> Cheapest in this test, but its cost grows with every delete. With deletes spread over old data it billed 2.60 GB a batch, not 0.30.</li>
+      <li>The lookup can also miss a delete if a row's date changes later. Not tested.</li>
+    </ul>
+  </details>
+  <details class="last">
+    <summary class="plain">Three other things I found</summary>
+    <ul>
+      <li>If a row's date changes and the filter uses only the new date, the merge leaves a duplicate. 100 out of 100 in the test. With the old date too, none.</li>
+      <li>On the same batch, the filter billed less than no filter even across 365 days: 17.09 GB against 20.82 GB.</li>
+      <li>BigQuery's free estimate for an unfiltered merge was always the whole table, 51.5 GB. The real bill was 5.6 to 20.8 GB.</li>
+    </ul>
+  </details>
 
   <footer>
     <p>Postgres, by default, sends only a deleted row's ID. Without the date, BigQuery cannot tell which day to look in.</p>
-    <p>The method, every number and the code are in the <a href="https://github.com/zain2983/bigquery-cdc-merge-deletes">repository</a>. No affiliation with Artie.</p>
+    <p>Code and result files are in the <a href="https://github.com/zain2983/bigquery-cdc-merge-deletes">repository</a>. No affiliation with Artie.</p>
   </footer>
 </main>
 <script>
