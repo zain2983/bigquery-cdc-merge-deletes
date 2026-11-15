@@ -8,55 +8,90 @@
 <style>
   :root {
     --bg: #fbfaf7; --card: #ffffff; --ink: #16150f; --ink2: #5a584f; --line: #e4e1d8;
-    --accent: #1f5fbf; --bar: #2a78d6; --barsoft: #cde2fb; --chip: #f0ede4;
+    --accent: #1f5fbf; --bar: #2a78d6; --soft: #dbe7f7; --chip: #f0ede4; --miss: #b9b6aa;
   }
   @media (prefers-color-scheme: dark) {
     :root { --bg: #161613; --card: #1f1f1b; --ink: #f1efe8; --ink2: #b9b6aa; --line: #34332d;
-            --accent: #7fb0f5; --bar: #3987e5; --barsoft: #24364f; --chip: #2a2a25; }
+            --accent: #7fb0f5; --bar: #3987e5; --soft: #26323f; --chip: #2a2a25; --miss: #6a685f; }
   }
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--bg); color: var(--ink);
-         font: 17px/1.55 -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; }
-  main { max-width: 680px; margin: 0 auto; padding: 56px 16px 72px; }
+         font: 17px/1.5 -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; }
+  main { max-width: 720px; margin: 0 auto; padding: 56px 16px 72px; }
   h1 { font-size: 2.1rem; line-height: 1.15; margin: 0 0 14px; letter-spacing: -0.015em; }
-  h2 { font-size: 1.2rem; margin: 52px 0 6px; }
-  .sub { color: var(--ink2); margin: 0 0 18px; }
+  h2 { font-size: 1.3rem; line-height: 1.25; margin: 0 0 4px; }
+  section { margin-top: 56px; }
+  .step { font-size: 0.78rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink2); margin: 0 0 4px; }
+  .sub { color: var(--ink2); margin: 0 0 16px; }
   .meta { font-size: 0.88rem; color: var(--ink2); margin: 0; }
   a { color: var(--accent); }
-  .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 28px 0 0; }
-  .tile { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 18px; }
-  .tile b { display: block; font-size: 2.2rem; line-height: 1.05; font-variant-numeric: tabular-nums; }
-  .tile i { display: block; font-style: normal; font-weight: 600; margin: 6px 0 2px; }
-  .tile span { font-size: 0.9rem; color: var(--ink2); }
-  ol.steps { padding-left: 22px; margin: 10px 0 0; }
-  ol.steps li { margin: 6px 0; }
-  .bars { margin: 14px 0 0; }
-  .row { display: grid; grid-template-columns: 1fr; gap: 4px; padding: 10px 0; border-bottom: 1px solid var(--line); }
-  .row:last-child { border-bottom: 0; }
-  .row .name { font-weight: 600; }
-  .row .why { font-size: 0.9rem; color: var(--ink2); }
-  .track { display: flex; align-items: center; gap: 10px; }
-  .bar { height: 14px; border-radius: 0 4px 4px 0; background: var(--bar); min-width: 3px; }
-  .val { font-variant-numeric: tabular-nums; font-weight: 600; white-space: nowrap; }
-  .pick { background: var(--chip); border-radius: 999px; font-size: 0.78rem; padding: 1px 9px; font-weight: 600; margin-left: 6px; }
-  .tool { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 20px; margin: 14px 0 0; }
-  .tool label { display: block; font-weight: 600; margin-bottom: 10px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 20px; }
+
+  /* 1. the table as a grid of days */
+  .seg { display: inline-flex; background: var(--chip); border-radius: 999px; padding: 4px; gap: 4px; flex-wrap: wrap; }
+  .seg button { border: 0; background: transparent; color: var(--ink2); font: inherit; font-size: 0.92rem; font-weight: 600;
+                padding: 7px 14px; border-radius: 999px; cursor: pointer; }
+  .seg button[aria-pressed=true] { background: var(--bar); color: #fff; }
+  .days { display: grid; grid-template-columns: repeat(73, 1fr); gap: 2px; margin: 18px 0 6px; }
+  .days i { display: block; aspect-ratio: 1; border-radius: 1.5px; background: var(--soft); transition: background 0.5s; }
+  .days i.on { background: var(--bar); }
+  .axis { display: flex; justify-content: space-between; font-size: 0.8rem; color: var(--ink2); }
+  .read { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--line); }
+  .read b { display: block; font-size: 1.7rem; line-height: 1.1; font-variant-numeric: tabular-nums; }
+  .read span { font-size: 0.85rem; color: var(--ink2); }
+
+  /* 2. what Postgres sends */
+  .msgs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+  .msg { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 16px; }
+  .msg h3 { margin: 0 0 2px; font-size: 1rem; }
+  .msg p { margin: 0; font-size: 0.86rem; color: var(--ink2); }
+  .chips { display: flex; flex-wrap: wrap; gap: 5px; margin: 12px 0; }
+  .chips span { font: 600 0.78rem ui-monospace, SFMono-Regular, Menlo, monospace; padding: 4px 8px; border-radius: 6px; background: var(--bar); color: #fff; }
+  .chips span.no { background: transparent; color: var(--miss); border: 1.5px dashed var(--miss); padding: 2.5px 6.5px; }
+  .verdict { font-weight: 700; font-size: 0.92rem; color: var(--ink); }
+
+  /* 3. batch by batch */
+  .strat { display: grid; grid-template-columns: 1fr auto; column-gap: 16px; row-gap: 6px; align-items: end; padding: 14px 0; border-bottom: 1px solid var(--line); }
+  .strat:last-child { border-bottom: 0; padding-bottom: 0; }
+  .strat:first-child { padding-top: 0; }
+  .strat .name { font-weight: 700; grid-column: 1 / -1; }
+  .tag { background: var(--chip); border-radius: 999px; font-size: 0.76rem; padding: 1px 9px; font-weight: 700; margin-left: 6px; white-space: nowrap; }
+  .strip { display: grid; grid-template-columns: repeat(12, 1fr); gap: 4px; height: 64px; align-items: end; border-bottom: 1px solid var(--line); }
+  .strip i { display: block; background: var(--bar); border-radius: 3px 3px 0 0; min-height: 2px; }
+  .usd { text-align: right; line-height: 1.1; }
+  .usd b { display: block; font-size: 1.5rem; font-variant-numeric: tabular-nums; }
+  .usd span { font-size: 0.8rem; color: var(--ink2); }
+  .why { grid-column: 1 / -1; font-size: 0.88rem; color: var(--ink2); }
+
+  /* 4. slider */
+  .tool label { display: block; font-weight: 700; margin-bottom: 10px; }
   input[type=range] { width: 100%; accent-color: var(--bar); margin: 0; }
   .ticks { display: flex; justify-content: space-between; font-size: 0.8rem; color: var(--ink2); margin-top: 2px; }
-  .out { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--line); }
-  .out .do { font-size: 1.25rem; font-weight: 700; line-height: 1.25; }
-  .out .cost { margin-top: 6px; color: var(--ink2); font-variant-numeric: tabular-nums; }
-  .out .cost b { color: var(--ink); }
+  .cmp { margin-top: 18px; display: grid; gap: 12px; }
+  .cmp .lab { display: flex; justify-content: space-between; font-size: 0.9rem; margin-bottom: 4px; }
+  .cmp .lab b { font-variant-numeric: tabular-nums; }
+  .cmp .rail { height: 16px; background: var(--soft); border-radius: 4px; }
+  .cmp .fill { height: 16px; background: var(--miss); border-radius: 0 4px 4px 0; min-width: 3px; transition: width 0.15s; }
+  .cmp .win .fill { background: var(--bar); }
+  .cmp .win .lab { font-weight: 700; }
+  .do { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--line); font-size: 1.25rem; font-weight: 700; line-height: 1.25; }
   .fine { font-size: 0.85rem; color: var(--ink2); margin: 10px 0 0; }
+
   details { border-bottom: 1px solid var(--line); padding: 12px 0; }
   details:first-of-type { border-top: 1px solid var(--line); margin-top: 14px; }
   summary { cursor: pointer; font-weight: 600; }
   details ul { padding-left: 20px; margin: 10px 0 2px; }
   details li { margin: 5px 0; }
   code { font: 0.9em ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--chip); padding: 1px 5px; border-radius: 4px; }
-  .ask { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 18px; margin-top: 14px; font-size: 1.1rem; font-weight: 600; }
+  .ask { font-size: 1.15rem; font-weight: 700; }
   footer { margin-top: 48px; font-size: 0.88rem; color: var(--ink2); }
-  @media (max-width: 520px) { .pair { grid-template-columns: 1fr; } h1 { font-size: 1.65rem; } }
+  @media (max-width: 600px) {
+    h1 { font-size: 1.65rem; }
+    .msgs { grid-template-columns: 1fr; }
+    .read b { font-size: 1.25rem; }
+    .days { gap: 1px; }
+    .usd b { font-size: 1.2rem; }
+  }
 </style>
 </head>
 <body>
@@ -65,125 +100,182 @@
   <p class="sub">A measured follow-up to <a href="https://www.artie.com/blogs/bigquery-partition-aware-cdc-merges">Artie's benchmark</a> on partition-aware CDC merges.</p>
   <p class="meta">Zain Al Abidin · 15 November 2026 · <a href="https://github.com/zain2983/bigquery-cdc-merge-deletes">code and results</a> · no affiliation with Artie</p>
 
-  <div class="pair">
-    <div class="tile"><b>94 MB</b><i>$0.15 a day</i><span>Every row in the batch has its date. BigQuery reads two days.</span></div>
-    <div class="tile"><b>5.67 GB</b><i>$9.28 a day</i><span>One delete has no date. BigQuery reads all three years.</span></div>
-  </div>
-
-  <h2>Why it happens</h2>
-  <ol class="steps">
-    <li>Artie's filter tells BigQuery which days a batch touches.</li>
-    <li>It gets those days from the dates in the batch.</li>
-    <li>A Postgres delete, by default, sends only the row's key. No date.</li>
-    <li>So that batch has no filter, and reads everything.</li>
-  </ol>
-
-  <h2>Four ways to handle it</h2>
-  <p class="sub">Cost per day when every batch has 50 such deletes. Same 51.5 GB table as Artie's.</p>
-  <div class="bars" id="bars"></div>
-
-  <h2>Which one for your table?</h2>
-  <p class="sub">It depends on how often the problem shows up.</p>
-  <div class="tool">
-    <label for="n">Batches a day with a key-only delete: <span id="nv">0</span> of 288</label>
-    <input id="n" type="range" min="0" max="288" step="1" value="0">
-    <div class="ticks"><span>never</span><span>half</span><span>every batch</span></div>
-    <div class="out" aria-live="polite">
-      <div class="do" id="do"></div>
-      <div class="cost" id="cost"></div>
+  <section>
+    <p class="step">1 · The problem</p>
+    <h2>Each square is one day of the table. Blue means BigQuery reads it.</h2>
+    <p class="sub">Three years of data, 1,095 days. A batch of changes arrives every five minutes.</p>
+    <div class="card">
+      <div class="seg" role="group" aria-label="What the batch contains">
+        <button id="b-date" aria-pressed="true">Every delete has its date</button>
+        <button id="b-none" aria-pressed="false">One delete has no date</button>
+      </div>
+      <div class="days" id="days" aria-hidden="true"></div>
+      <div class="axis"><span>3 years ago</span><span>today</span></div>
+      <div class="read" aria-live="polite">
+        <div><b id="r-days"></b><span>days read</span></div>
+        <div><b id="r-gb"></b><span>billed per merge</span></div>
+        <div><b id="r-usd"></b><span>a day, at 288 merges</span></div>
+      </div>
     </div>
-  </div>
-  <p class="fine">A straight line between two measured points: a batch with the filter (94 MB) and a batch without it (5.67 GB). If you can change the source database, <code>REPLICA IDENTITY USING INDEX</code> makes every delete carry its date, and the answer is always $0.15.</p>
+  </section>
 
-  <h2>The details</h2>
-  <details>
-    <summary>How I measured it</summary>
-    <ul>
-      <li>Artie's harness, unchanged. 1,095 daily partitions, 109.5M rows, 51.5 GB.</li>
-      <li>First I reproduced their result: 5.67 GB without the filter, 94 MB with it.</li>
-      <li>Then each batch got 50 deletes with no date. 12 batches per strategy.</li>
-      <li>All four strategies ended with the same table: 109,503,000 rows.</li>
-      <li>On-demand pricing, $6.25 per TiB, one merge every five minutes.</li>
-    </ul>
-  </details>
-  <details>
-    <summary>Why not the lookup table? It was the cheapest.</summary>
-    <ul>
-      <li>Its cost grows with every delete. The queue's does not.</li>
-      <li>With deletes spread over old data it billed 2.60 GB a batch, not 0.30.</li>
-      <li>If a row's date changes later, it can point at the wrong day and miss a delete. Not tested.</li>
-      <li>It used more slot time than no filter: 167 s against 111 s.</li>
-    </ul>
-  </details>
-  <details>
-    <summary>Why the queue</summary>
-    <ul>
-      <li>One flush billed 5.63 GB, about 3 cents, with 50 deletes waiting or with 300.</li>
-      <li>So the flush interval sets the bill. Every 30 minutes gave $1.65 a day.</li>
-      <li>Still to solve: readers see deleted rows until the flush.</li>
-      <li>Still to test: hourly and daily flushes, and delete-then-reinsert of the same key.</li>
-    </ul>
-  </details>
-  <details>
-    <summary>Three more findings</summary>
-    <ul>
-      <li>A filter built from a row's new date only left 100 duplicates out of 100 moved rows. With the old date too, none.</li>
-      <li>On the same batch, the filter billed less than no filter even at 365 partitions: 17.09 GB against 20.82 GB.</li>
-      <li>BigQuery's free estimate for any unfiltered merge was the whole table, 51.5 GB. The bill was 5.6 to 20.8 GB.</li>
-    </ul>
-  </details>
-  <details>
-    <summary>Limits</summary>
-    <ul>
-      <li>Synthetic data. One table, one region, one run.</li>
-      <li>Every batch had exactly 50 key-only deletes.</li>
-      <li>Bytes billed were the same on every repeat. Slot time was not.</li>
-    </ul>
-  </details>
+  <section>
+    <p class="step">2 · Why it happens</p>
+    <h2>What Postgres sends when a row is deleted</h2>
+    <p class="sub">The filter needs the row's date. It depends on one Postgres setting whether a delete includes it.</p>
+    <div class="msgs">
+      <div class="msg">
+        <h3>Default</h3><p>Postgres's standard setting.</p>
+        <div class="chips"><span>key</span><span class="no">date</span><span class="no">rest of row</span></div>
+        <div class="verdict">No date. No filter.</div>
+      </div>
+      <div class="msg">
+        <h3>Using index</h3><p>Key and date in one index.</p>
+        <div class="chips"><span>key</span><span>date</span><span class="no">rest of row</span></div>
+        <div class="verdict">Filter works.</div>
+      </div>
+      <div class="msg">
+        <h3>Full</h3><p>What Artie's benchmark used.</p>
+        <div class="chips"><span>key</span><span>date</span><span>rest of row</span></div>
+        <div class="verdict">Filter works. Biggest log.</div>
+      </div>
+    </div>
+  </section>
 
-  <h2>The number I cannot see</h2>
-  <div class="ask">In real pipelines, what share of batches carry a key-only delete?</div>
+  <section>
+    <p class="step">3 · What I measured</p>
+    <h2>Five ways to handle it, batch by batch</h2>
+    <p class="sub">Each bar is one batch with 50 dateless deletes. Taller means more data billed. Twelve batches in a row.</p>
+    <div class="card" id="strats"></div>
+  </section>
+
+  <section>
+    <p class="step">4 · What to do</p>
+    <h2>It depends on how often it happens</h2>
+    <p class="sub">Move the slider to match your table.</p>
+    <div class="card tool">
+      <label for="n">Batches a day with a dateless delete: <span id="nv">0</span> of 288</label>
+      <input id="n" type="range" min="0" max="288" step="1" value="12">
+      <div class="ticks"><span>never</span><span>half</span><span>every batch</span></div>
+      <div class="cmp">
+        <div id="c-fall"><div class="lab"><span>Let those batches read the whole table</span><b id="v-fall"></b></div><div class="rail"><div class="fill" id="f-fall"></div></div></div>
+        <div id="c-queue"><div class="lab"><span>Queue the deletes, flush every 30 minutes</span><b>$1.65</b></div><div class="rail"><div class="fill" id="f-queue"></div></div></div>
+      </div>
+      <div class="do" id="do" aria-live="polite"></div>
+    </div>
+    <p class="fine">The top bar is a straight line between two measured batches: 94 MB with the filter, 5.67 GB without. The queue's $1.65 was measured with deletes in every batch. If you can change the source database, the "using index" setting above makes this $0.15 at any position.</p>
+  </section>
+
+  <section>
+    <p class="step">5 · The details</p>
+    <h2>If you want to check the work</h2>
+    <details>
+      <summary>How I measured it</summary>
+      <ul>
+        <li>Artie's harness, unchanged. 1,095 daily partitions, 109.5M rows, 51.5 GB.</li>
+        <li>First I reproduced their result: 5.67 GB without the filter, 94 MB with it.</li>
+        <li>Then each batch got 50 deletes with no date. 12 batches per strategy.</li>
+        <li>All four strategies ended with the same table: 109,503,000 rows.</li>
+        <li>On-demand pricing, $6.25 per TiB, one merge every five minutes.</li>
+      </ul>
+    </details>
+    <details>
+      <summary>Why not the lookup table? It was the cheapest.</summary>
+      <ul>
+        <li>Its cost grows with every delete. The queue's does not.</li>
+        <li>With deletes spread over old data it billed 2.60 GB a batch, not 0.30.</li>
+        <li>If a row's date changes later, it can point at the wrong day and miss a delete. Not tested.</li>
+        <li>It used more slot time than no filter: 167 s against 111 s.</li>
+      </ul>
+    </details>
+    <details>
+      <summary>What the queue still needs</summary>
+      <ul>
+        <li>Readers see deleted rows until the flush. A view that hides queued keys would fix that. Not measured yet.</li>
+        <li>Delete, then insert the same key again, inside one flush window. Not tested yet.</li>
+        <li>Only the 30-minute flush is measured. Hourly and daily flushes are next.</li>
+      </ul>
+    </details>
+    <details>
+      <summary>Three more findings</summary>
+      <ul>
+        <li>A filter built from a row's new date only left 100 duplicates out of 100 moved rows. With the old date too, none.</li>
+        <li>On the same batch, the filter billed less than no filter even at 365 partitions: 17.09 GB against 20.82 GB.</li>
+        <li>BigQuery's free estimate for any unfiltered merge was the whole table, 51.5 GB. The bill was 5.6 to 20.8 GB.</li>
+      </ul>
+    </details>
+    <details>
+      <summary>Limits</summary>
+      <ul>
+        <li>Synthetic data. One table, one region, one run.</li>
+        <li>Every batch had exactly 50 dateless deletes.</li>
+        <li>Bytes billed were the same on every repeat. Slot time was not.</li>
+        <li>An unfiltered merge touches every day but does not read every column. It billed 5.67 GB of a 51.5 GB table.</li>
+      </ul>
+    </details>
+  </section>
+
+  <section>
+    <p class="step">6 · The number I cannot see</p>
+    <div class="card ask">In real pipelines, what share of batches carry a dateless delete?</div>
+  </section>
 
   <footer>Every number here comes from a results file in the <a href="https://github.com/zain2983/bigquery-cdc-merge-deletes">repository</a>. Artie's harness is included unchanged under its MIT license.</footer>
 </main>
 <script>
-  // Measured: mean bytes billed per batch, USD per day at 288 merges and $6.25/TiB.
-  var rows = [
-    ["Read the whole table", 9.28, "The fallback. Fine when it is rare.", ""],
-    ["Delete in a separate step", 9.29, "No saving. The delete reads everything too.", ""],
-    ["Queue deletes, apply every 30 minutes", 1.65, "Each flush costs 3 cents, however many are waiting.", "recommended"],
-    ["Lookup table in BigQuery", 0.49, "Cheapest here, but its cost grows with every delete.", ""],
-    ["Make the delete carry its date", 0.15, "One Postgres setting. Needs a change at the source.", "best if you can"]
+  // ---- 1. grid of 1,095 days ----
+  var days = document.getElementById("days"), cells = [];
+  for (var i = 0; i < 1095; i++) { var c = document.createElement("i"); days.appendChild(c); cells.push(c); }
+  var bDate = document.getElementById("b-date"), bNone = document.getElementById("b-none");
+  function grid(all) {
+    cells.forEach(function (c, i) { c.className = (all || i >= 1093) ? "on" : ""; });
+    bDate.setAttribute("aria-pressed", String(!all)); bNone.setAttribute("aria-pressed", String(all));
+    document.getElementById("r-days").textContent = all ? "1,095" : "2";
+    document.getElementById("r-gb").textContent = all ? "5.67 GB" : "94 MB";
+    document.getElementById("r-usd").textContent = all ? "$9.28" : "$0.15";
+  }
+  bDate.onclick = function () { grid(false); }; bNone.onclick = function () { grid(true); };
+  grid(false);
+
+  // ---- 3. measured GB billed per batch, 12 batches ----
+  function rep(v) { var a = []; for (var i = 0; i < 12; i++) a.push(v); return a; }
+  var queue = rep(0.069); queue[5] = 5.696; queue[11] = 5.696;
+  var strats = [
+    ["Read the whole table", "", rep(5.670), 9.28, "The fallback. Every batch pays the full read."],
+    ["Delete in a separate step", "", rep(5.675), 9.29, "No saving. The separate delete reads everything too."],
+    ["Queue the deletes, flush every 30 minutes", "recommended", queue, 1.65, "Ten cheap batches, then one flush. A flush costs 3 cents however many deletes are waiting."],
+    ["Lookup table in BigQuery", "", rep(0.299), 0.49, "Cheapest here. But its cost grows with every delete."],
+    ["Make the delete carry its date", "best if you can", rep(0.094), 0.15, "The 'using index' setting. Needs a change to the source database."]
   ];
-  var max = 9.29, bars = document.getElementById("bars");
-  rows.forEach(function (r) {
+  var box = document.getElementById("strats"), MAXGB = 5.696;
+  strats.forEach(function (s) {
+    var bars = s[2].map(function (g, i) {
+      return '<i style="height:' + Math.max(g / MAXGB * 100, 3).toFixed(1) + '%" title="Batch ' + (i + 1) + ": " + g.toFixed(3) + ' GB billed"></i>';
+    }).join("");
     var d = document.createElement("div");
-    d.className = "row";
-    d.innerHTML = '<div class="name">' + r[0] + (r[3] ? '<span class="pick">' + r[3] + "</span>" : "") + "</div>" +
-      '<div class="track"><div class="bar" style="width:' + (r[1] / max * 78).toFixed(1) + '%"></div><div class="val">$' + r[1].toFixed(2) + "</div></div>" +
-      '<div class="why">' + r[2] + "</div>";
-    bars.appendChild(d);
+    d.className = "strat";
+    d.innerHTML = '<div class="name">' + s[0] + (s[1] ? '<span class="tag">' + s[1] + "</span>" : "") + "</div>" +
+      '<div class="strip">' + bars + "</div>" +
+      '<div class="usd"><b>$' + s[3].toFixed(2) + "</b><span>a day</span></div>" +
+      '<div class="why">' + s[4] + "</div>";
+    box.appendChild(d);
   });
 
-  var PER_TIB = 6.25, TIB = Math.pow(2, 40);
-  var noFilter = 5670000000 / TIB * PER_TIB;  // 5.670 GB, a batch that falls back
-  var filtered = 94371840 / TIB * PER_TIB;    // 94 MB, a batch that keeps the filter
-  var QUEUE = 1.65;
-  var n = document.getElementById("n"), nv = document.getElementById("nv"),
-      doEl = document.getElementById("do"), cost = document.getElementById("cost");
+  // ---- 4. slider ----
+  var TIB = Math.pow(2, 40), noFilter = 5670000000 / TIB * 6.25, filtered = 94371840 / TIB * 6.25, QUEUE = 1.65, TOP = 9.28;
+  var n = document.getElementById("n");
   function show() {
     var k = +n.value, fall = k * noFilter + (288 - k) * filtered;
-    nv.textContent = k;
-    if (k === 0) {
-      doEl.textContent = "Use the filter. Nothing else needed.";
-      cost.innerHTML = "About <b>$" + fall.toFixed(2) + "</b> a day.";
-    } else if (fall < QUEUE) {
-      doEl.textContent = "Let those batches fall back.";
-      cost.innerHTML = "About <b>$" + fall.toFixed(2) + "</b> a day. Each fallback batch costs 3 cents.";
-    } else {
-      doEl.textContent = "Queue the deletes and flush on a schedule.";
-      cost.innerHTML = "Falling back would cost about <b>$" + fall.toFixed(2) + "</b> a day. The queue measured <b>$1.65</b> with a flush every 30 minutes.";
-    }
+    document.getElementById("nv").textContent = k;
+    document.getElementById("v-fall").textContent = "$" + fall.toFixed(2);
+    document.getElementById("f-fall").style.width = (fall / TOP * 100).toFixed(1) + "%";
+    document.getElementById("f-queue").style.width = (QUEUE / TOP * 100).toFixed(1) + "%";
+    var fallWins = fall < QUEUE;
+    document.getElementById("c-fall").className = fallWins ? "win" : "";
+    document.getElementById("c-queue").className = fallWins ? "" : "win";
+    document.getElementById("do").textContent =
+      k === 0 ? "Use the filter. Nothing else needed." :
+      fallWins ? "Rare enough. Let those batches fall back." : "Too often. Queue the deletes and flush on a schedule.";
   }
   n.addEventListener("input", show);
   show();
