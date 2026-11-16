@@ -5,137 +5,389 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>BigQuery CDC merges: deletes without a date</title>
 <meta name="description" content="Measured follow-up to Artie's BigQuery MERGE partition-pruning benchmark: what a delete without a date costs, and what to do about it.">
+<meta name="theme-color" content="#0f1410">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
-  :root { --bg: #fbfaf7; --ink: #16150f; --ink2: #5a584f; --line: #e4e1d8; --accent: #1f5fbf; --bar: #2a78d6; --soft: #dbe7f7; --chip: #f0ede4; }
-  @media (prefers-color-scheme: dark) {
-    :root { --bg: #161613; --ink: #f1efe8; --ink2: #b9b6aa; --line: #34332d; --accent: #7fb0f5; --bar: #3987e5; --soft: #26323f; --chip: #2a2a25; }
-  }
+  :root { --ink: 15 20 16; --line: 229 231 235; --text: 229 231 235; --muted: 167 173 159; --dim: 120 127 112;
+          --accent: 132 204 22; --accent-light: 190 242 100; --soft: 200 224 160; color-scheme: dark;
+          --sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+          --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace; }
   * { box-sizing: border-box; }
-  body { margin: 0; background: var(--bg); color: var(--ink); font: 18px/1.5 -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; }
-  main { max-width: 640px; margin: 0 auto; padding: 64px 16px 72px; }
-  h1 { font-size: 2.2rem; line-height: 1.15; margin: 0 0 12px; letter-spacing: -0.015em; }
-  h2 { font-size: 1.35rem; margin: 64px 0 16px; }
-  p { margin: 0 0 12px; }
-  .sub { color: var(--ink2); }
-  a { color: var(--accent); }
-  .seg { display: flex; background: var(--chip); border-radius: 999px; padding: 4px; gap: 4px; margin-top: 28px; }
-  .seg button { flex: 1; border: 0; background: transparent; color: var(--ink2); font: inherit; font-size: 0.95rem; font-weight: 600; padding: 9px 10px; border-radius: 999px; cursor: pointer; }
-  .seg button[aria-pressed=true] { background: var(--bar); color: #fff; }
-  .days { display: grid; grid-template-columns: repeat(73, 1fr); gap: 2px; margin: 20px 0 6px; }
-  .days i { display: block; aspect-ratio: 1; border-radius: 1.5px; background: var(--soft); transition: background 0.5s; }
-  .days i.on { background: var(--bar); }
-  .cap { font-size: 0.85rem; color: var(--ink2); }
-  .big { font-size: 3rem; font-weight: 700; line-height: 1.1; margin: 20px 0 0; font-variant-numeric: tabular-nums; }
-  .big span { font-size: 1.1rem; font-weight: 400; color: var(--ink2); }
-  details { border-top: 1px solid var(--line); }
-  details.last { border-bottom: 1px solid var(--line); }
-  summary { display: flex; justify-content: space-between; gap: 16px; align-items: center; padding: 16px 0; cursor: pointer; list-style: none; }
-  summary::-webkit-details-marker { display: none; }
-  summary b { display: block; }
-  summary span { color: var(--ink2); font-size: 0.95rem; }
-  summary .usd { font-size: 1.4rem; font-weight: 700; white-space: nowrap; font-variant-numeric: tabular-nums; color: var(--ink); }
-  summary .usd::after, summary.plain::after { content: "+"; display: inline-block; width: 1.1em; text-align: right; font-weight: 400; color: var(--ink2); }
-  details[open] > summary .usd::after, details[open] > summary.plain::after { content: "\2212"; }
-  summary.plain { font-weight: 600; padding: 13px 0; }
-  details ul { margin: 0 0 18px; padding-left: 20px; font-size: 0.95rem; }
-  details li { margin: 6px 0; }
-  .hint { font-size: 0.85rem; color: var(--ink2); margin: -8px 0 12px; }
-  code { font: 0.9em ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--chip); padding: 1px 5px; border-radius: 4px; }
-  footer { margin-top: 56px; font-size: 0.9rem; color: var(--ink2); }
-  @media (max-width: 520px) { h1 { font-size: 1.7rem; } .big { font-size: 2.3rem; } .days { gap: 1px; } }
+  html { -webkit-text-size-adjust: 100%; overflow-x: hidden; }
+  body { margin: 0; background: rgb(var(--ink)); color: rgb(var(--text)); font: 17px/1.6 var(--sans);
+         -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; }
+  h1, h2, h3 { text-wrap: balance; }
+  p { margin: 0 0 12px; text-wrap: pretty; }
+  ::selection { background: rgb(var(--accent) / 0.32); }
+  :focus-visible { outline: 2px solid rgb(var(--accent) / 0.85); outline-offset: 3px; border-radius: 4px; }
+  a { color: rgb(var(--soft)); text-underline-offset: 3px; text-decoration-color: rgb(var(--soft) / 0.4); }
+  a:hover { text-decoration-color: rgb(var(--soft)); }
+
+  .ambient { position: fixed; inset: 0; z-index: 0; overflow: hidden; pointer-events: none; }
+  .ambient i { position: absolute; border-radius: 50%; filter: blur(130px); }
+  .ambient i:first-child { left: -18%; top: -22%; width: 46rem; height: 46rem; background: rgb(var(--accent) / 0.06); }
+  .ambient i:last-child { right: -16%; top: 30%; width: 38rem; height: 38rem; background: rgb(101 163 13 / 0.05); }
+  main { position: relative; z-index: 1; }
+
+  .wrap { max-width: 72rem; margin: 0 auto; padding: 0 1.25rem; }
+  header.wrap { padding-top: 96px; padding-bottom: 72px; }
+  section { padding: 80px 0 88px; border-top: 1px solid rgb(var(--line) / 0.08); }
+  section.alt { background: rgb(var(--line) / 0.03); }
+  .sec-head { display: flex; align-items: center; gap: 16px; }
+  .eyebrow { font-family: var(--mono); font-size: 0.6875rem; letter-spacing: 0.18em; text-transform: uppercase; color: rgb(var(--dim)); margin: 0; }
+  .rule { flex: 1; height: 1px; background: linear-gradient(90deg, transparent, rgb(var(--line) / 0.14) 18%, rgb(var(--line) / 0.14) 82%, transparent); }
+  h1 { font-size: 3.25rem; font-weight: 600; line-height: 1.05; letter-spacing: -0.045em; margin: 14px 0 18px; max-width: 900px;
+       background-image: linear-gradient(100deg, rgb(var(--text)) 0%, rgb(var(--text)) 55%, rgb(var(--soft)) 100%);
+       -webkit-background-clip: text; background-clip: text; color: transparent; }
+  h2 { font-size: 2.5rem; font-weight: 600; line-height: 1.1; letter-spacing: -0.045em; margin: 20px 0 20px; }
+  .lead { max-width: 760px; font-size: 1.1rem; color: rgb(var(--muted)); }
+  .sub { color: rgb(var(--muted)); font-size: 1rem; }
+
+  /* frosted panel, as on the portfolio */
+  .panel { background: rgb(var(--line) / 0.035); border: 1px solid rgb(var(--line) / 0.09); border-radius: 16px; padding: 22px;
+           backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); }
+  .panel h3 { margin: 0 0 14px; font-size: 1.2rem; font-weight: 600; letter-spacing: -0.02em; }
+  .rowcard { display: flex; align-items: center; gap: 8px; min-height: 36px; font-size: 0.95rem; color: rgb(var(--muted)); }
+  .chip { font: 500 0.82rem var(--mono); padding: 4px 10px; border-radius: 6px; background: rgb(var(--soft) / 0.14); color: rgb(var(--soft)); border: 1.5px solid rgb(var(--soft) / 0.35); }
+  .chip.no { background: transparent; color: rgb(var(--dim)); border: 1.5px dashed rgb(var(--dim)); }
+  .strip { display: grid; grid-template-columns: repeat(14, 1fr); gap: 4px; margin: 12px 0 6px; }
+  .strip i { display: block; height: 58px; border-radius: 4px; background: rgb(var(--line) / 0.07); transition: background 0.25s; }
+  .strip i.on { background: rgb(var(--soft) / 0.7); }
+  .ends { display: flex; justify-content: space-between; font: 0.6875rem var(--mono); letter-spacing: 0.12em; text-transform: uppercase; color: rgb(var(--dim)); }
+  .status { min-height: 1.6em; font-size: 0.95rem; color: rgb(var(--muted)); margin-top: 12px; }
+  .status b { color: rgb(var(--text)); font-weight: 600; }
+  .price { font-size: 2.5rem; font-weight: 600; line-height: 1.1; margin-top: 18px; letter-spacing: -0.045em; font-variant-numeric: tabular-nums; }
+  .price span { display: block; font-size: 0.95rem; font-weight: 400; letter-spacing: 0; color: rgb(var(--muted)); margin-top: 6px; }
+  .two { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 28px; }
+  .note { font-size: 0.9rem; color: rgb(var(--dim)); margin-top: 14px; }
+
+  /* approaches */
+  .way { padding: 44px 0; border-top: 1px solid rgb(var(--line) / 0.09); }
+  .way:first-of-type { margin-top: 28px; }
+  .way:last-child { padding-bottom: 0; }
+  .way-top { display: grid; grid-template-columns: 1fr 1fr; gap: 48px; align-items: center; }
+  .way h3 { margin: 0 0 10px; font-size: 1.5rem; font-weight: 600; line-height: 1.2; letter-spacing: -0.03em; }
+  .way p { font-size: 1.05rem; color: rgb(var(--muted)); }
+  .way .cost { font-size: 2.5rem; font-weight: 600; line-height: 1.1; margin: 18px 0 0; letter-spacing: -0.045em; color: rgb(var(--text)); font-variant-numeric: tabular-nums; }
+  .way .cost span { font-size: 0.95rem; font-weight: 400; letter-spacing: 0; color: rgb(var(--muted)); }
+  .tray { display: inline-block; margin-left: auto; font: 0.8rem var(--mono); background: rgb(var(--line) / 0.07); color: rgb(var(--text)); border-radius: 999px; padding: 4px 11px; font-variant-numeric: tabular-nums; }
+
+  .tog { display: inline-flex; align-items: center; gap: 8px; margin-top: 26px; padding: 8px 16px; border-radius: 999px;
+         border: 1px solid rgb(var(--line) / 0.12); background: rgb(var(--line) / 0.035); color: rgb(var(--text)); font: 500 0.9rem var(--sans); cursor: pointer;
+         transition: border-color 0.35s cubic-bezier(0.16, 1, 0.3, 1), background-color 0.35s cubic-bezier(0.16, 1, 0.3, 1); }
+  .tog:hover { background: rgb(var(--line) / 0.06); border-color: rgb(var(--soft) / 0.4); }
+  .tog::after { content: ""; width: 7px; height: 7px; border-right: 1.5px solid rgb(var(--muted)); border-bottom: 1.5px solid rgb(var(--muted));
+                transform: translateY(-2px) rotate(45deg); transition: transform 0.3s ease; }
+  .tog[aria-expanded=true]::after { transform: translateY(2px) rotate(-135deg); }
+  .fold { display: grid; grid-template-rows: 0fr; transition: grid-template-rows 0.4s cubic-bezier(0.16, 1, 0.3, 1); }
+  .fold.open { grid-template-rows: 1fr; }
+  .fold > div { overflow: hidden; min-height: 0; opacity: 0; transition: opacity 0.4s ease; }
+  .fold.open > div { opacity: 1; }
+  .fold ul { list-style: none; margin: 0 0 18px; padding: 4px 20px; background: rgb(var(--line) / 0.035); border: 1px solid rgb(var(--line) / 0.07); border-radius: 14px; font-size: 0.98rem; color: rgb(var(--muted)); }
+  .fold li { padding: 12px 0; border-bottom: 1px solid rgb(var(--line) / 0.07); }
+  .fold li:last-child { border-bottom: 0; }
+  .fold li b { color: rgb(var(--text)); font-weight: 600; }
+  .facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; margin-top: 16px; }
+  .fact { background: rgb(var(--line) / 0.035); border: 1px solid rgb(var(--line) / 0.07); border-radius: 14px; padding: 16px 18px; }
+  .fact b { display: block; font-size: 1.2rem; font-weight: 600; line-height: 1.2; letter-spacing: -0.02em; margin-bottom: 6px; font-variant-numeric: tabular-nums; }
+  .fact span { font-size: 0.92rem; color: rgb(var(--muted)); }
+  .fact code { background: none; padding: 0; }
+  .more { margin-top: 8px; border-bottom: 1px solid rgb(var(--line) / 0.09); }
+  .more .tog { display: flex; width: 100%; justify-content: space-between; margin: 0; padding: 18px 2px; border: 0; border-top: 1px solid rgb(var(--line) / 0.09);
+               border-radius: 0; background: transparent; font-size: 1.1rem; }
+  .more .tog:hover { background: transparent; color: rgb(var(--soft)); }
+  code { font: 0.86em var(--mono); background: rgb(var(--line) / 0.07); padding: 1px 5px; border-radius: 4px; }
+
+  footer.wrap { padding-top: 0; padding-bottom: 48px; display: flex; flex-wrap: wrap; gap: 8px 24px; justify-content: space-between;
+                font: 0.6875rem var(--mono); letter-spacing: 0.12em; text-transform: uppercase; color: rgb(var(--dim)); }
+  footer .rule { display: none; }
+  footer.wrap { border-top: 0; padding-top: 28px; }
+  .foot-line { border-top: 1px solid rgb(var(--line) / 0.08); }
+  footer a { color: rgb(var(--dim)); text-decoration: none; transition: color 0.3s; }
+  footer a:hover { color: rgb(var(--soft)); }
+  footer nav { display: flex; flex-wrap: wrap; gap: 6px 20px; }
+
+  @media (max-width: 760px) {
+    body { font-size: 16px; }
+    header.wrap { padding-top: 56px; padding-bottom: 44px; }
+    h1 { font-size: 2.1rem; }
+    h2 { font-size: 1.75rem; }
+    section { padding: 52px 0 56px; }
+    .two, .way-top { grid-template-columns: 1fr; gap: 20px; }
+    .strip i { height: 38px; }
+    .price, .way .cost { font-size: 2rem; }
+    .ambient i:first-child { width: 20rem; height: 20rem; filter: blur(80px); background: rgb(var(--accent) / 0.08); }
+    .ambient i:last-child { width: 17rem; height: 17rem; filter: blur(80px); }
+  }
+  @media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition-duration: 0.01ms !important; } }
 </style>
 </head>
 <body>
+<div class="ambient" aria-hidden="true"><i></i><i></i></div>
 <main>
+<header class="wrap">
+  <div class="sec-head"><span class="eyebrow">Report · November 2026</span><span class="rule"></span></div>
   <h1>One delete without a date makes BigQuery read the whole table</h1>
-  <p class="sub">A follow-up to <a href="https://www.artie.com/blogs/bigquery-partition-aware-cdc-merges">Artie's benchmark</a>. Measured on BigQuery by Zain Al Abidin, November 2026.</p>
+  <p class="sub">A follow-up to <a href="https://www.artie.com/blogs/bigquery-partition-aware-cdc-merges">Artie's benchmark</a>. Measured on BigQuery by Zain Al Abidin.</p>
 
-  <div class="seg" role="group" aria-label="What the batch contains">
-    <button id="b-date" aria-pressed="true">Delete has its date</button>
-    <button id="b-none" aria-pressed="false">Delete has no date</button>
+</header>
+
+<section>
+<div class="wrap">
+  <div class="sec-head"><span class="eyebrow">01</span><span class="rule"></span></div>
+  <h2>The problem</h2>
+  <p class="lead">BigQuery keeps a big table in daily slices, one per day. When changes arrive, it only needs to open the days those changes belong to. It finds those days from the date on each row.</p>
+  <p class="lead">A deleted row is the exception. By default, Postgres sends only the row's ID. With no date, BigQuery has to open every day to find it. And it charges for everything it opens.</p>
+
+  <div class="two">
+    <div class="panel">
+      <h3>The delete has its date</h3>
+      <div class="rowcard">A delete arrives: <span class="chip">id</span><span class="chip">date</span></div>
+      <div class="strip" id="p1-strip"></div>
+      <div class="ends"><span>older days</span><span>today</span></div>
+      <div class="status"><b>Opens only the days it needs.</b></div>
+      <div class="price">$0.15 a day<span>2 of 1,095 days read</span></div>
+    </div>
+    <div class="panel">
+      <h3>The delete has no date</h3>
+      <div class="rowcard">A delete arrives: <span class="chip">id</span><span class="chip no">date ?</span></div>
+      <div class="strip" id="p2-strip"></div>
+      <div class="ends"><span>older days</span><span>today</span></div>
+      <div class="status"><b>Has to open every day.</b></div>
+      <div class="price">$9.28 a day<span>all 1,095 days read</span></div>
+    </div>
   </div>
-  <div class="days" id="days" aria-hidden="true"></div>
-  <p class="cap">Each square is one day of a 3-year table. Blue is what BigQuery reads for one batch of changes.</p>
-  <p class="big" aria-live="polite"><b id="r-usd"></b> <span id="r-note"></span></p>
+  <p class="note">Each box is one day. The real table has 1,095 of them: three years, 51.5 GB. A batch of changes arrives every five minutes.</p>
 
-  <h2>What to do about it</h2>
-  <p class="hint">Click any row for the detail.</p>
-  <details>
-    <summary><div><b>It rarely happens</b><span>Let it happen. Each time costs 3 cents.</span></div><div class="usd">3¢</div></summary>
-    <ul>
-      <li>A batch that loses the filter billed 5.67 GB. At $6.25 per TiB that is 3 cents.</li>
-      <li>Ten such batches a day comes to about $0.47 a day in total.</li>
-      <li>Up to about 47 a day, this is cheaper than the 30-minute queue below.</li>
-      <li>Nothing to build. The merge is still correct, just unfiltered that once.</li>
-    </ul>
-  </details>
-  <details>
-    <summary><div><b>It happens a lot</b><span>Hold the deletes back and apply them every 30 minutes.</span></div><div class="usd">$1.65 a day</div></summary>
-    <ul>
-      <li>Every batch runs the cheap filtered merge. The dateless deletes wait in a small queue table.</li>
-      <li>Every 30 minutes one statement applies them all. That flush billed 5.63 GB, about 3 cents.</li>
-      <li>It billed the same with 50 deletes waiting and with 300. So how often you flush sets the bill.</li>
-      <li>Measured over 12 batches. The final table matched the unfiltered merge: 109,503,000 rows, same fingerprints.</li>
-      <li>Open: readers see a deleted row until the flush. A view that hides queued rows would fix that. Not measured yet.</li>
-      <li>Next: hourly and daily flushes.</li>
-    </ul>
-  </details>
-  <details class="last">
-    <summary><div><b>You can change the database</b><span>One Postgres setting makes every delete carry its date.</span></div><div class="usd">$0.15 a day</div></summary>
-    <ul>
-      <li>The setting is <code>REPLICA IDENTITY USING INDEX</code>, on a unique index of (key, date).</li>
-      <li>Checked on Postgres 17: a delete then carries the key and the date.</li>
-      <li>Every batch keeps the filter, so the cost is Artie's original result.</li>
-      <li>The price: one extra index on the source table. If someone drops it, updates and deletes there fail.</li>
-      <li>A source table already partitioned by date needs nothing. Its key already includes the date.</li>
-    </ul>
-  </details>
+</div>
+</section>
 
+<section class="alt">
+<div class="wrap">
+  <div class="sec-head"><span class="eyebrow">02</span><span class="rule"></span></div>
+  <h2>Three ways to deal with it</h2>
+  <p class="lead">Which one fits depends on how often a dateless delete shows up.</p>
+
+  <div class="way">
+    <div class="way-top">
+      <div>
+        <h3>1. It rarely happens: let it happen</h3>
+        <p>Most batches stay cheap. The odd batch with a dateless delete reads everything, once. Nothing to build.</p>
+        <p class="cost">3¢ <span>each time it happens</span></p>
+      </div>
+      <div class="panel">
+        <div class="rowcard" id="a-card"></div>
+        <div class="strip" id="a-strip"></div>
+        <div class="ends"><span>older days</span><span>today</span></div>
+        <div class="status" id="a-status"></div>
+      </div>
+    </div>
+    <button class="tog" aria-expanded="false">See the numbers</button>
+    <div class="fold"><div>
+      <div class="facts">
+          <div class="fact"><b>5.67 GB</b><span>What a batch bills when it loses the filter.</span></div>
+          <div class="fact"><b>3¢</b><span>That batch, at $6.25 per TiB.</span></div>
+          <div class="fact"><b>$0.47 a day</b><span>The total if it happens ten times a day.</span></div>
+          <div class="fact"><b>47 a day</b><span>Up to about here, this is cheaper than option 2.</span></div>
+      </div>
+    </div></div>
+  </div>
+
+  <div class="way">
+    <div class="way-top">
+      <div>
+        <h3>2. It happens a lot: hold the deletes back</h3>
+        <p>Put the dateless deletes on a waiting list. Every batch stays cheap. Every 30 minutes, apply the whole list in one go. That one step reads everything, but only once.</p>
+        <p class="cost">$1.65 <span>a day</span></p>
+      </div>
+      <div class="panel">
+        <div class="rowcard" id="b-card"></div>
+        <div class="strip" id="b-strip"></div>
+        <div class="ends"><span>older days</span><span>today</span></div>
+        <div class="status" id="b-status"></div>
+      </div>
+    </div>
+    <button class="tog" aria-expanded="false">See the numbers</button>
+    <div class="fold"><div>
+      <div class="facts">
+          <div class="fact"><b>5.63 GB</b><span>What the step that applies the list bills. About 3 cents.</span></div>
+          <div class="fact"><b>50 or 300</b><span>Deletes waiting. The bill was the same either way, so how often you run it sets the cost.</span></div>
+          <div class="fact"><b>109,503,000 rows</b><span>The final table matched the unfiltered merge, with the same fingerprints. 12 batches.</span></div>
+          <div class="fact"><b>Still open</b><span>Readers see a deleted row until the list is applied. A view that hides waiting rows would fix that. Not measured yet.</span></div>
+          <div class="fact"><b>Next</b><span>Applying the list hourly and daily.</span></div>
+      </div>
+    </div></div>
+  </div>
+
+  <div class="way">
+    <div class="way-top">
+      <div>
+        <h3>3. You can change the database: send the date</h3>
+        <p>One Postgres setting makes every delete carry its date. Then the problem is gone, and every batch is cheap.</p>
+        <p class="cost">$0.15 <span>a day</span></p>
+      </div>
+      <div class="panel">
+        <div class="rowcard" id="c-card"></div>
+        <div class="strip" id="c-strip"></div>
+        <div class="ends"><span>older days</span><span>today</span></div>
+        <div class="status" id="c-status"></div>
+      </div>
+    </div>
+    <button class="tog" aria-expanded="false">See the numbers</button>
+    <div class="fold"><div>
+      <div class="facts">
+          <div class="fact"><b>The setting</b><span><code>REPLICA IDENTITY USING INDEX</code>, on a unique index of (key, date).</span></div>
+          <div class="fact"><b>Postgres 17</b><span>Checked: a delete then carries the key and the date.</span></div>
+          <div class="fact"><b>One extra index</b><span>The price, on the source table. If someone drops it, updates and deletes there fail.</span></div>
+          <div class="fact"><b>Nothing needed</b><span>If the source table is already partitioned by date. Its key already includes the date.</span></div>
+      </div>
+    </div></div>
+  </div>
+
+</div>
+</section>
+
+<section>
+<div class="wrap">
+  <div class="sec-head"><span class="eyebrow">03</span><span class="rule"></span></div>
   <h2>More, if you want it</h2>
-  <details>
-    <summary class="plain">How I measured it</summary>
-    <ul>
-      <li>Artie's harness, unchanged. Same table: 1,095 daily partitions, 109.5M rows, 51.5 GB.</li>
-      <li>First I reproduced their result: 5.67 GB without the filter, 94 MB with it.</li>
-      <li>Then every batch got 50 deletes with no date. 12 batches per approach.</li>
-      <li>One merge every five minutes, on-demand pricing at $6.25 per TiB.</li>
-      <li>Limits: synthetic data, one table, one run.</li>
-    </ul>
-  </details>
-  <details>
-    <summary class="plain">Two things I tried that I would not use</summary>
-    <ul>
-      <li><b>Deleting in a separate step: $9.29 a day.</b> No saving. The separate delete reads the whole table too.</li>
-      <li><b>A lookup table in BigQuery: $0.49 a day.</b> Cheapest in this test, but its cost grows with every delete. With deletes spread over old data it billed 2.60 GB a batch, not 0.30.</li>
-      <li>The lookup can also miss a delete if a row's date changes later. Not tested.</li>
-    </ul>
-  </details>
-  <details class="last">
-    <summary class="plain">Three other things I found</summary>
-    <ul>
-      <li>If a row's date changes and the filter uses only the new date, the merge leaves a duplicate. 100 out of 100 in the test. With the old date too, none.</li>
-      <li>On the same batch, the filter billed less than no filter even across 365 days: 17.09 GB against 20.82 GB.</li>
-      <li>BigQuery's free estimate for an unfiltered merge was always the whole table, 51.5 GB. The real bill was 5.6 to 20.8 GB.</li>
-    </ul>
-  </details>
+  <div class="more">
+    <button class="tog" aria-expanded="false">How I measured it</button>
+    <div class="fold"><div><ul>
+        <li>Artie's harness, unchanged. Same table: 1,095 daily partitions, 109.5M rows, 51.5 GB.</li>
+        <li>First I reproduced their result: 5.67 GB without the filter, 94 MB with it.</li>
+        <li>Then every batch got 50 deletes with no date. 12 batches per approach.</li>
+        <li>One merge every five minutes, on-demand pricing at $6.25 per TiB.</li>
+        <li>Limits: synthetic data, one table, one run.</li>
+      </ul></div></div>
+    <button class="tog" aria-expanded="false">Two things I tried that I would not use</button>
+    <div class="fold"><div><ul>
+        <li><b>Deleting in a separate step: $9.29 a day.</b> No saving. The separate delete reads the whole table too.</li>
+        <li><b>A lookup table in BigQuery: $0.49 a day.</b> Cheapest in this test, but its cost grows with every delete. With deletes spread over old data it billed 2.60 GB a batch, not 0.30.</li>
+        <li>The lookup can also miss a delete if a row's date changes later. Not tested.</li>
+      </ul></div></div>
+    <button class="tog" aria-expanded="false">Three other things I found</button>
+    <div class="fold"><div><ul>
+        <li>If a row's date changes and the filter uses only the new date, the merge leaves a duplicate. 100 out of 100 in the test. With the old date too, none.</li>
+        <li>On the same batch, the filter billed less than no filter even across 365 days: 17.09 GB against 20.82 GB.</li>
+        <li>BigQuery's free estimate for an unfiltered merge was always the whole table, 51.5 GB. The real bill was 5.6 to 20.8 GB.</li>
+      </ul></div></div>
+  </div>
 
-  <footer>
-    <p>Postgres, by default, sends only a deleted row's ID. Without the date, BigQuery cannot tell which day to look in.</p>
-    <p>Code and result files are in the <a href="https://github.com/zain2983/bigquery-cdc-merge-deletes">repository</a>. No affiliation with Artie.</p>
+</div>
+</section>
+
+  <div class="foot-line"></div>
+  <footer class="wrap">
+    <span class="rule"></span>
+    <span>Zain Al Abidin · no affiliation with Artie</span>
+    <nav aria-label="Links">
+      <a href="https://github.com/zain2983/bigquery-cdc-merge-deletes">Code</a>
+      <a href="https://zain2983.vercel.app/">Portfolio</a>
+      <a href="https://www.linkedin.com/in/zain2983/">LinkedIn</a>
+      <a href="https://github.com/zain2983">GitHub</a>
+      <a href="https://x.com/zain2983">X</a>
+      <a href="https://t.me/zain2983">Telegram</a>
+    </nav>
   </footer>
 </main>
 <script>
-  var days = document.getElementById("days"), cells = [];
-  for (var i = 0; i < 1095; i++) { var c = document.createElement("i"); days.appendChild(c); cells.push(c); }
-  var bDate = document.getElementById("b-date"), bNone = document.getElementById("b-none");
-  function grid(all) {
-    cells.forEach(function (c, i) { c.className = (all || i >= 1093) ? "on" : ""; });
-    bDate.setAttribute("aria-pressed", String(!all)); bNone.setAttribute("aria-pressed", String(all));
-    document.getElementById("r-usd").textContent = all ? "$9.28" : "$0.15";
-    document.getElementById("r-note").textContent = all ? "a day. It reads all 1,095 days." : "a day. It reads 2 days.";
+  document.querySelectorAll(".tog").forEach(function (b) {
+    b.addEventListener("click", function () {
+      var open = b.getAttribute("aria-expanded") !== "true";
+      b.setAttribute("aria-expanded", String(open));
+      b.nextElementSibling.classList.toggle("open", open);
+      if (b.textContent.indexOf("the numbers") > -1) b.textContent = open ? "Hide the numbers" : "See the numbers";
+    });
+  });
+
+  var N = 14, TODAY = [12, 13];
+  var still = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  function $(id) { return document.getElementById(id); }
+  function sleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+  function strip(id) {
+    var el = $(id), cells = [];
+    for (var i = 0; i < N; i++) { var c = document.createElement("i"); el.appendChild(c); cells.push(c); }
+    return {
+      clear: function () { cells.forEach(function (c) { c.className = ""; }); },
+      light: function (idx) { idx.forEach(function (i) { cells[i].className = "on"; }); },
+      all: function () { cells.forEach(function (c) { c.className = "on"; }); },
+      sweep: async function () { for (var i = N - 1; i >= 0; i--) { cells[i].className = "on"; await sleep(55); } }
+    };
   }
-  bDate.onclick = function () { grid(false); }; bNone.onclick = function () { grid(true); };
-  grid(false);
+  function card(id, label, dated) {
+    $(id).innerHTML = label + ' <span class="chip">id</span><span class="chip' + (dated ? "" : " no") + '">' + (dated ? "date" : "date ?") + "</span>";
+  }
+
+  // The problem, side by side.
+  var p1 = strip("p1-strip"), p2 = strip("p2-strip");
+  async function problem() {
+    for (;;) {
+      p1.clear(); p2.clear(); await sleep(700);
+      p1.light(TODAY); await p2.sweep(); await sleep(2600);
+    }
+  }
+
+  // 1. Let it happen: five normal batches, one dateless.
+  var a = strip("a-strip");
+  async function wayA() {
+    for (;;) {
+      for (var k = 1; k <= 6; k++) {
+        a.clear(); await sleep(250);
+        if (k === 4) {
+          card("a-card", "Batch " + k + ":", false);
+          $("a-status").innerHTML = "<b>No date. Reads everything, once. 3¢.</b>";
+          await a.sweep(); await sleep(1500);
+        } else {
+          card("a-card", "Batch " + k + ":", true);
+          $("a-status").innerHTML = "Has its date. Reads 2 days.";
+          a.light(TODAY); await sleep(900);
+        }
+      }
+    }
+  }
+
+  // 2. Hold the deletes back: six cheap batches, then one flush.
+  var b = strip("b-strip");
+  async function wayB() {
+    for (;;) {
+      for (var k = 1; k <= 6; k++) {
+        b.clear(); await sleep(250);
+        $("b-card").innerHTML = "Batch " + k + ': <span class="chip">id</span><span class="chip no">date ?</span><span class="tray">waiting: ' + k * 50 + "</span>";
+        $("b-status").innerHTML = "Deletes go on the list. The batch reads 2 days.";
+        b.light(TODAY); await sleep(900);
+      }
+      b.clear(); await sleep(250);
+      $("b-card").innerHTML = 'After 30 minutes: <span class="tray">waiting: 300</span>';
+      $("b-status").innerHTML = "<b>Apply the whole list in one go. Reads everything, once.</b>";
+      await b.sweep();
+      $("b-card").innerHTML = 'After 30 minutes: <span class="tray">waiting: 0</span>';
+      await sleep(1700);
+    }
+  }
+
+  // 3. Send the date.
+  var c = strip("c-strip");
+  async function wayC() {
+    for (;;) {
+      c.clear(); card("c-card", "A delete arrives:", false);
+      $("c-status").innerHTML = "Before: Postgres sends only the ID.";
+      await sleep(1600);
+      card("c-card", "A delete arrives:", true);
+      $("c-status").innerHTML = "<b>After the setting: the date comes too.</b>";
+      await sleep(700);
+      c.light(TODAY); await sleep(2200);
+    }
+  }
+
+  if (still) {
+    p1.light(TODAY); p2.all();
+    card("a-card", "A batch with a dateless delete:", false); a.all(); $("a-status").innerHTML = "<b>Reads everything, once. 3¢.</b>";
+    $("b-card").innerHTML = 'After 30 minutes: <span class="tray">waiting: 300</span>'; b.all(); $("b-status").innerHTML = "<b>Apply the whole list in one go. Reads everything, once.</b>";
+    card("c-card", "A delete arrives:", true); c.light(TODAY); $("c-status").innerHTML = "<b>After the setting: the date comes too.</b>";
+  } else { problem(); wayA(); wayB(); wayC(); }
 </script>
 </body>
 </html>
